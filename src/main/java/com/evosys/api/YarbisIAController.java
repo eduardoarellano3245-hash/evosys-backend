@@ -79,11 +79,7 @@ public class YarbisIAController {
 
             Map responseBody = openaiResponse.getBody();
 
-            String texto = "";
-
-            if (responseBody != null && responseBody.get("output_text") != null) {
-                texto = String.valueOf(responseBody.get("output_text"));
-            }
+            String texto = extraerTextoOpenAI(responseBody);
 
             if (texto == null || texto.isBlank()) {
                 texto = "OpenAI respondió, pero no pude leer la respuesta.";
@@ -106,5 +102,50 @@ public class YarbisIAController {
             respuesta.put("error", e.getMessage());
             return ResponseEntity.ok(respuesta);
         }
+    }
+
+    private String extraerTextoOpenAI(Map responseBody) {
+        if (responseBody == null) {
+            return "";
+        }
+
+        Object outputText = responseBody.get("output_text");
+        if (outputText != null && !String.valueOf(outputText).isBlank()) {
+            return String.valueOf(outputText);
+        }
+
+        Object output = responseBody.get("output");
+
+        if (!(output instanceof List<?> outputList)) {
+            return "";
+        }
+
+        StringBuilder texto = new StringBuilder();
+
+        for (Object itemObj : outputList) {
+            if (!(itemObj instanceof Map<?, ?> item)) {
+                continue;
+            }
+
+            Object content = item.get("content");
+
+            if (!(content instanceof List<?> contentList)) {
+                continue;
+            }
+
+            for (Object contentObj : contentList) {
+                if (!(contentObj instanceof Map<?, ?> contentMap)) {
+                    continue;
+                }
+
+                Object text = contentMap.get("text");
+
+                if (text != null && !String.valueOf(text).isBlank()) {
+                    texto.append(String.valueOf(text)).append(" ");
+                }
+            }
+        }
+
+        return texto.toString().trim();
     }
 }
