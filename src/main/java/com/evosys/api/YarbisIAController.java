@@ -3,6 +3,7 @@ package com.evosys.api;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
@@ -19,117 +20,73 @@ public class YarbisIAController {
 
     @GetMapping("/health")
     public Map<String, Object> health() {
-
         Map<String, Object> res = new HashMap<>();
-
         res.put("ok", true);
         res.put("servicio", "YARBIS IA");
         res.put("apiKey", openaiApiKey != null && !openaiApiKey.isBlank());
-
         return res;
     }
 
     @PostMapping("/ia")
-    public ResponseEntity<Map<String, Object>> consultarIA(
-            @RequestBody Map<String, Object> body
-    ) {
-
+    public ResponseEntity<Map<String, Object>> consultarIA(@RequestBody Map<String, Object> body) {
         Map<String, Object> respuesta = new HashMap<>();
 
         try {
-
-            String mensaje = String.valueOf(
-                    body.getOrDefault("mensaje", "")
-            );
-
+            String mensaje = String.valueOf(body.getOrDefault("mensaje", "")).trim();
             Object contexto = body.get("contexto");
 
-            String promptSistema = """
-                    Eres YARBIS.
-                    Un asistente inteligente empresarial dentro de EVOSYS.
+            if (mensaje.isBlank()) {
+                respuesta.put("ok", false);
+                respuesta.put("respuesta", "No recibí mensaje.");
+                return ResponseEntity.ok(respuesta);
+            }
 
-                    Responde en español mexicano.
-                    Sé natural.
-                    Sé útil.
-                    Sé breve pero inteligente.
+            if (openaiApiKey == null || openaiApiKey.isBlank()) {
+                respuesta.put("ok", false);
+                respuesta.put("respuesta", "No tengo configurada la API KEY.");
+                return ResponseEntity.ok(respuesta);
+            }
 
-                    Puedes responder:
-                    - ventas
-                    - inventario
-                    - clientes
-                    - stock
-                    - sistema
-                    - preguntas casuales
+            String input = """
+                    Eres YARBIS, asistente inteligente dentro de EVOSYS.
+                    Responde en español mexicano, natural y breve.
+                    Usa el contexto del sistema cuando aplique.
+                    No inventes datos.
 
-                    Usa el contexto recibido.
-                    No inventes información.
-                    """;
+                    Mensaje del usuario:
+                    %s
+
+                    Contexto EVOSYS:
+                    %s
+                    """.formatted(mensaje, contexto);
 
             Map<String, Object> request = new HashMap<>();
-
-            request.put("model", "gpt-4.1-mini");
-
-            List<Map<String, Object>> input = new ArrayList<>();
-
-            Map<String, Object> systemMsg = new HashMap<>();
-            systemMsg.put("role", "system");
-            systemMsg.put("content", promptSistema);
-
-            Map<String, Object> userMsg = new HashMap<>();
-            userMsg.put("role", "user");
-            userMsg.put(
-                    "content",
-                    "Mensaje: " + mensaje + "\n\nContexto:\n" + contexto
-            );
-
-            input.add(systemMsg);
-            input.add(userMsg);
-
+            request.put("model", "gpt-4o-mini");
             request.put("input", input);
 
             HttpHeaders headers = new HttpHeaders();
-
             headers.setContentType(MediaType.APPLICATION_JSON);
-
             headers.setBearerAuth(openaiApiKey);
 
-            HttpEntity<Map<String, Object>> entity =
-                    new HttpEntity<>(request, headers);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-            ResponseEntity<Map> openaiResponse =
-                    restTemplate.exchange(
-                            "https://api.openai.com/v1/responses",
-                            HttpMethod.POST,
-                            entity,
-                            Map.class
-                    );
+            ResponseEntity<Map> openaiResponse = restTemplate.exchange(
+                    "https://api.openai.com/v1/responses",
+                    HttpMethod.POST,
+                    entity,
+                    Map.class
+            );
 
             Map responseBody = openaiResponse.getBody();
 
             String texto = "";
 
-            if (responseBody != null &&
-                    responseBody.get("output") instanceof List outputList &&
-                    !outputList.isEmpty()) {
-
-                Object firstObj = outputList.get(0);
-
-                if (firstObj instanceof Map firstMap &&
-                        firstMap.get("content") instanceof List contentList &&
-                        !contentList.isEmpty()) {
-
-                    Object contentObj = contentList.get(0);
-
-                    if (contentObj instanceof Map contentMap &&
-                            contentMap.get("text") != null) {
-
-                        texto = String.valueOf(contentMap.get("text"));
-                    }
-                }
+            if (responseBody != null && responseBody.get("output_text") != null) {
+                texto = String.valueOf(responseBody.get("output_text"));
             }
 
-            if (texto.isBlank()) {
-                texto = "No pude generar respuesta.";
+            if (texto == null || texto.isBlank()) {
+                texto = "OpenAI respondió, pero no pude leer la respuesta.";
             }
 
             respuesta.put("ok", true);
@@ -137,17 +94,17 @@ public class YarbisIAController {
 
             return ResponseEntity.ok(respuesta);
 
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
+        } catch (HttpStatusCodeException e) {
             respuesta.put("ok", false);
-            respuesta.put("respuesta", "Error conectando IA.");
-            respuesta.put("error", e.getMessage());
+            respuesta.put("respuesta", "OpenAI rechazó la solicitud.");
+            respuesta.put("error", e.getResponseBodyAsString());
+            return ResponseEntity.ok(respuesta);
 
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(respuesta);
+        } catch (Exception e) {
+            respuesta.put("ok", false);
+            respuesta.put("respuesta", "Error conectando con la IA.");
+            respuesta.put("error", e.getMessage());
+            return ResponseEntity.ok(respuesta);
         }
     }
 }
