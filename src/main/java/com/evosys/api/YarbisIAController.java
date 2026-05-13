@@ -20,115 +20,77 @@ public class YarbisIAController {
 
     @GetMapping("/health")
     public Map<String, Object> health() {
-
         Map<String, Object> res = new HashMap<>();
-
         res.put("ok", true);
         res.put("servicio", "YARBIS IA");
         res.put("apiKey", openaiApiKey != null && !openaiApiKey.isBlank());
-
         return res;
     }
 
     @PostMapping("/ia")
-    public ResponseEntity<Map<String, Object>> consultarIA(
-            @RequestBody Map<String, Object> body
-    ) {
-
+    public ResponseEntity<Map<String, Object>> consultarIA(@RequestBody Map<String, Object> body) {
         Map<String, Object> respuesta = new HashMap<>();
 
         try {
-
-            String mensaje = String.valueOf(
-                    body.getOrDefault("mensaje", "")
-            ).trim();
-
+            String mensaje = String.valueOf(body.getOrDefault("mensaje", "")).trim();
             Object contexto = body.get("contexto");
 
             if (mensaje.isBlank()) {
-
                 respuesta.put("ok", false);
                 respuesta.put("respuesta", "No recibí mensaje.");
-
                 return ResponseEntity.ok(respuesta);
             }
 
             if (openaiApiKey == null || openaiApiKey.isBlank()) {
-
                 respuesta.put("ok", false);
                 respuesta.put("respuesta", "No tengo configurada la API KEY.");
-
                 return ResponseEntity.ok(respuesta);
             }
 
             String prompt = """
-                    Eres YARBIS, un asistente inteligente dentro de EVOSYS.
+                    Eres YARBIS, asistente inteligente dentro de EVOSYS.
+                    Responde en español mexicano, natural, breve y útil.
+                    Usa el contexto si sirve, pero no inventes datos.
 
-                    Responde:
-                    - natural
-                    - breve
-                    - útil
-                    - en español mexicano
-
-                    Puedes hablar de:
-                    - ventas
-                    - inventario
-                    - clientes
-                    - productos
-                    - sistema
-                    - preguntas casuales
-
-                    Usa el contexto cuando sea útil.
-                    No inventes datos.
-
-                    MENSAJE:
+                    Mensaje:
                     %s
 
-                    CONTEXTO:
+                    Contexto EVOSYS:
                     %s
                     """.formatted(mensaje, contexto);
 
             Map<String, Object> request = new HashMap<>();
-
-            request.put("model", "gpt-3.5-turbo");
+            request.put("model", "gpt-4o-mini");
 
             List<Map<String, String>> messages = new ArrayList<>();
 
-            Map<String, String> systemMessage = new HashMap<>();
-            systemMessage.put("role", "system");
-            systemMessage.put(
-                    "content",
-                    "Eres YARBIS, asistente inteligente de EVOSYS."
-            );
+            Map<String, String> system = new HashMap<>();
+            system.put("role", "system");
+            system.put("content", "Eres YARBIS, asistente inteligente de EVOSYS.");
 
-            Map<String, String> userMessage = new HashMap<>();
-            userMessage.put("role", "user");
-            userMessage.put("content", prompt);
+            Map<String, String> user = new HashMap<>();
+            user.put("role", "user");
+            user.put("content", prompt);
 
-            messages.add(systemMessage);
-            messages.add(userMessage);
+            messages.add(system);
+            messages.add(user);
 
             request.put("messages", messages);
 
             HttpHeaders headers = new HttpHeaders();
-
             headers.setContentType(MediaType.APPLICATION_JSON);
-
             headers.setBearerAuth(openaiApiKey);
 
-            HttpEntity<Map<String, Object>> entity =
-                    new HttpEntity<>(request, headers);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-            ResponseEntity<Map> openaiResponse =
-                    restTemplate.exchange(
-                            "https://api.openai.com/v1/chat/completions",
-                            HttpMethod.POST,
-                            entity,
-                            Map.class
-                    );
+            ResponseEntity<Map> openaiResponse = restTemplate.exchange(
+                    "https://api.openai.com/v1/chat/completions",
+                    HttpMethod.POST,
+                    entity,
+                    Map.class
+            );
 
             Map responseBody = openaiResponse.getBody();
-
             String texto = extraerTextoOpenAI(responseBody);
 
             if (texto == null || texto.isBlank()) {
@@ -141,17 +103,17 @@ public class YarbisIAController {
             return ResponseEntity.ok(respuesta);
 
         } catch (HttpStatusCodeException e) {
+            String error = e.getResponseBodyAsString();
 
             respuesta.put("ok", false);
-            respuesta.put("respuesta", "OpenAI rechazó la solicitud.");
-            respuesta.put("error", e.getResponseBodyAsString());
+            respuesta.put("respuesta", "OpenAI rechazó la solicitud: " + error);
+            respuesta.put("error", error);
 
             return ResponseEntity.ok(respuesta);
 
         } catch (Exception e) {
-
             respuesta.put("ok", false);
-            respuesta.put("respuesta", "Error conectando con la IA.");
+            respuesta.put("respuesta", "Error conectando con la IA: " + e.getMessage());
             respuesta.put("error", e.getMessage());
 
             return ResponseEntity.ok(respuesta);
@@ -159,31 +121,22 @@ public class YarbisIAController {
     }
 
     private String extraerTextoOpenAI(Map responseBody) {
-
         try {
+            if (responseBody == null) return "";
 
             List choices = (List) responseBody.get("choices");
-
-            if (choices == null || choices.isEmpty()) {
-                return "";
-            }
+            if (choices == null || choices.isEmpty()) return "";
 
             Map firstChoice = (Map) choices.get(0);
-
             Map message = (Map) firstChoice.get("message");
-
-            if (message == null) {
-                return "";
-            }
+            if (message == null) return "";
 
             Object content = message.get("content");
-
-            return content != null
-                    ? String.valueOf(content)
-                    : "";
+            return content != null ? String.valueOf(content) : "";
 
         } catch (Exception e) {
             return "";
         }
     }
 }
+
